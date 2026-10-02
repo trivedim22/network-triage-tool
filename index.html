@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Educational Network Traffic Triage Tool. Analyse Wireshark CSV exports locally in your browser." />
+  <title>Network Traffic Triage Tool</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div>
+        <p class="eyebrow">Cybersecurity education &middot; SOC analyst practice</p>
+        <h1>Network Traffic Triage Tool</h1>
+        <p class="subtitle">Upload a Wireshark packet-list CSV and learn how an analyst triages unusual traffic patterns.</p>
+      </div>
+      <div class="header-badges">
+        <p class="privacy-badge" role="note">&#x1F512; Your packet capture data is analysed locally in your browser and is not uploaded anywhere.</p>
+        <p class="disclaimer-badge">Educational network triage tool. Alerts indicate activity worth investigating and do not prove malicious behaviour.</p>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <!-- 1. Upload -->
+    <section class="card" aria-labelledby="upload-h">
+      <h2 id="upload-h">1. Load traffic &mdash; Upload Wireshark CSV</h2>
+      <p class="muted">Export from Wireshark: <strong>File &gt; Export Packet Dissections &gt; As CSV</strong>. Only analyse traffic from systems and networks you own or are authorised to monitor.</p>
+
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload Wireshark CSV. Press Enter to choose a file, or drag and drop a CSV file here.">
+        <p class="drop-title">Drag &amp; drop your <code>.csv</code> here</p>
+        <p class="muted">or</p>
+        <label class="btn" for="fileInput">Choose CSV file</label>
+        <input type="file" id="fileInput" accept=".csv,text/csv,text/plain" hidden />
+        <p class="muted small">Parsed locally. Nothing leaves your browser. Max ~10&nbsp;MB recommended.</p>
+      </div>
+
+      <div class="sample-row" aria-label="Demo data">
+        <span class="muted">No capture handy? Try demo data:</span>
+        <button type="button" class="btn btn-secondary" data-sample="samples/normal-traffic.csv">Load Normal Sample</button>
+        <button type="button" class="btn btn-secondary" data-sample="samples/high-volume-traffic.csv">Load Suspicious Sample</button>
+        <button type="button" class="btn btn-secondary" data-sample="samples/mixed-soc-lab.csv">Load Mixed SOC Lab</button>
+        <button type="button" class="btn btn-secondary" data-sample="samples/port-scan-demo.csv">Port-Scan Example</button>
+        <button type="button" class="btn btn-secondary" data-sample="samples/icmp-sweep-demo.csv">ICMP Example</button>
+        <button type="button" class="btn btn-secondary" data-sample="samples/dns-burst-demo.csv">DNS Example</button>
+        <button type="button" class="btn btn-secondary" data-sample="samples/syn-demo.csv">SYN Example</button>
+      </div>
+
+      <div id="fileStatus" class="file-status" aria-live="polite">
+        <p class="muted">No file loaded yet.</p>
+      </div>
+      <p id="demoBadge" class="demo-badge" hidden>Demo Data &mdash; fictional sample for education only.</p>
+    </section>
+
+    <!-- 2. Thresholds -->
+    <section class="card" aria-labelledby="settings-h">
+      <h2 id="settings-h">2. Investigation thresholds</h2>
+      <p class="muted">Thresholds should be adjusted based on the environment. A busy server may legitimately generate thousands of packets, while the same activity from another endpoint might deserve investigation. These are educational defaults, not universal security thresholds.</p>
+      <form id="thresholdForm" class="threshold-grid">
+        <div><label for="thrVolume">Packets per source</label><input type="number" id="thrVolume" value="50" min="1" max="100000" /></div>
+        <div><label for="thrDests">Unique destinations</label><input type="number" id="thrDests" value="10" min="1" max="10000" /></div>
+        <div><label for="thrPorts">Unique ports</label><input type="number" id="thrPorts" value="10" min="1" max="10000" /></div>
+        <div><label for="thrIcmp">ICMP packets</label><input type="number" id="thrIcmp" value="30" min="1" max="100000" /></div>
+        <div><label for="thrDns">DNS packets</label><input type="number" id="thrDns" value="30" min="1" max="100000" /></div>
+        <div><label for="thrRepeated">Repeated src &rarr; dst packets</label><input type="number" id="thrRepeated" value="40" min="1" max="100000" /></div>
+        <div><label for="thrSyn">TCP SYN packets</label><input type="number" id="thrSyn" value="20" min="1" max="100000" /></div>
+        <div class="threshold-actions">
+          <button type="submit" class="btn">Re-analyse</button>
+          <button type="button" id="resetThr" class="btn btn-secondary">Reset Defaults</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 3. Dashboard -->
+    <section class="card" aria-labelledby="dash-h">
+      <h2 id="dash-h">3. Network overview</h2>
+      <div id="emptyState" class="empty-state">
+        <p>Upload a CSV or load a sample to see the triage dashboard.</p>
+        <p class="muted small">Video demo path: Normal &rarr; little/no alerts &rarr; Suspicious (&gt;50 packets) &rarr; High Packet Volume &rarr; Mixed SOC Lab &rarr; Scanning + ICMP alerts &rarr; explain: detection tells you where to look, investigation determines what happened.</p>
+      </div>
+      <div id="dashboard" hidden>
+        <div class="summary-grid" id="summaryCards" aria-live="polite"></div>
+        <div id="scorePanel" class="score-panel" aria-live="polite"></div>
+        <div class="cols-2">
+          <div>
+            <h3>Top source hosts</h3>
+            <div id="topSources"></div>
+          </div>
+          <div>
+            <h3>Top destinations</h3>
+            <div id="topDests"></div>
+          </div>
+        </div>
+        <h3>Protocol distribution</h3>
+        <div id="protoDist"></div>
+      </div>
+    </section>
+
+    <!-- 4. Alerts -->
+    <section class="card" aria-labelledby="alerts-h">
+      <h2 id="alerts-h">4. Alerts &mdash; activity worth investigating</h2>
+      <p class="muted">Severity = investigative priority, not certainty of attack. An anomaly is a starting point for investigation, not proof of compromise.</p>
+      <form class="filter-grid" id="filterForm" aria-label="Filter results">
+        <div><label for="fSrc">Source IP</label><select id="fSrc"><option value="">All sources</option></select></div>
+        <div><label for="fDst">Destination IP</label><select id="fDst"><option value="">All destinations</option></select></div>
+        <div><label for="fProto">Protocol</label><select id="fProto"><option value="">All protocols</option></select></div>
+        <div><label for="fSev">Alert severity</label><select id="fSev"><option value="">All severities</option><option>Informational</option><option>Low</option><option>Medium</option><option>High</option></select></div>
+        <div><label for="fSearch">Search alerts</label><input type="search" id="fSearch" placeholder="e.g. 192.168.1.25 or DNS" /></div>
+        <div class="threshold-actions"><button type="button" id="clearFilters" class="btn btn-secondary">Clear filters</button></div>
+      </form>
+      <div id="alertCount" class="muted small" aria-live="polite"></div>
+      <div id="alertsList" class="alerts-list" aria-live="polite"><p class="muted">No analysis yet.</p></div>
+    </section>
+
+    <!-- 5. Education -->
+    <section class="card" aria-labelledby="analyst-h">
+      <h2 id="analyst-h">How to Think Like an Analyst</h2>
+      <ol class="steps">
+        <li><strong>Observe</strong> unusual behaviour &mdash; what stands out versus normal for this network?</li>
+        <li><strong>Identify</strong> the source and destination &mdash; which device, which system, who owns them?</li>
+        <li><strong>Determine</strong> which protocol is involved &mdash; DNS, ICMP, TCP, ARP all mean different things.</li>
+        <li><strong>Establish</strong> whether the activity is expected &mdash; backups, updates, and admin tools look noisy too.</li>
+        <li><strong>Look</strong> for supporting indicators &mdash; ports, timing, packet sizes, repeated patterns.</li>
+        <li><strong>Correlate</strong> with other telemetry &mdash; endpoint logs, firewall, IDS, user reports.</li>
+        <li><strong>Decide</strong> whether further investigation is required &mdash; escalate, monitor, or close with notes.</li>
+      </ol>
+      <blockquote class="lesson">An anomaly is a starting point for investigation, not proof of compromise.<br /><span>Detection tells an analyst where to look. Investigation determines what actually happened.</span></blockquote>
+    </section>
+
+    <section class="card" aria-labelledby="wire-h">
+      <h2 id="wire-h">Wireshark &rarr; CSV in 5 steps</h2>
+      <ol class="steps">
+        <li>Open Wireshark and capture traffic in an authorised environment.</li>
+        <li>Stop the capture when you have enough packets.</li>
+        <li>Go to <strong>File &gt; Export Packet Dissections &gt; As CSV</strong>.</li>
+        <li>Save the packet-list CSV to your computer.</li>
+        <li>Upload the CSV into this tool (top of this page).</li>
+      </ol>
+      <p class="warn">Only capture traffic from systems and networks you own or are authorised to monitor.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Educational network triage tool. Alerts indicate activity worth investigating and do not prove malicious behaviour.</p>
+      <p class="muted small">100% local &middot; no analytics, tracking, cookies, ads, telemetry &middot; no external requests. See README.md for limitations and future work.</p>
+    </div>
+  </footer>
+
+  <script src="samples-data.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
